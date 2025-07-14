@@ -1,0 +1,16 @@
+pandas
+numpy
+scikit-learn
+fastapi
+uvicorn
+langchain
+langchain-openai
+chromadb
+openai
+pypdf2
+spacy
+python-dotenv
+boto3
+pytest
+
+#-e .
