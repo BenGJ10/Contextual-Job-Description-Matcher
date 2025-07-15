@@ -9,8 +9,11 @@ chromadb
 openai
 pypdf2
 spacy
+textacy
+python-docx
 python-dotenv
 boto3
 pytest
+
 
 #-e .
