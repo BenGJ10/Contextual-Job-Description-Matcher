@@ -67,6 +67,7 @@ def extract_text(file_path: str, doc_type: str):
         word_count = len(text.split())
         
         # Return structured JSON
+        logging.info(f"Text extraction successful for {file_path}. Word count: {word_count}")
         return {
             "doc_id": doc_id,
             "type": doc_type,
@@ -77,3 +78,4 @@ def extract_text(file_path: str, doc_type: str):
     except Exception as e:
         print(f"Error processing {file_path}: {str(e)}")
         return None
+    
