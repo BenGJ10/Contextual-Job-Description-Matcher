@@ -1,0 +1,59 @@
+{
+  "programming_languages": [
+    "Python", "Java", "C", "C++", "C#", "JavaScript", "TypeScript", "R", "Go", "Ruby", "PHP", "Swift", "Kotlin", "Perl", "Scala", "Rust", "Objective-C", "MATLAB", "Dart"
+  ],
+  "web_technologies": [
+    "HTML", "CSS", "SASS", "Bootstrap", "Tailwind CSS", "REST", "GraphQL", "WebSockets", "XML", "jQuery"
+  ],
+  "databases": [
+    "MySQL", "PostgreSQL", "MongoDB", "SQLite", "Oracle", "Redis", "Cassandra", "MariaDB", "DynamoDB", "Elasticsearch", "Neo4j", "Firebase"
+  ],
+  "cloud_platforms": [
+    "AWS", "Azure", "Google Cloud Platform", "Heroku", "DigitalOcean", "Netlify", "Vercel", "Cloudflare"
+  ],
+  "devops_tools": [
+    "Docker", "Kubernetes", "Terraform", "Ansible", "Jenkins", "GitLab CI", "Travis CI", "CircleCI", "Helm", "Prometheus", "Grafana", "Nagios", "Packer"
+  ],
+  "version_control": [
+    "Git", "GitHub", "GitLab", "Bitbucket", "SVN", "MLflow"
+  ],
+  "id_es": [
+    "VS Code", "IntelliJ IDEA", "PyCharm", "Eclipse", "NetBeans", "Android Studio", "Xcode"
+  ],
+  "frameworks_and_libraries": [
+    "React", "Angular", "Vue.js", "Next.js", "Nuxt.js", "Express.js", "Flask", "Django", "Spring Boot", "ASP.NET", "Laravel", "Ruby on Rails", "FastAPI", "Svelte"
+  ],
+  "data_science_ml": [
+    "Pandas", "NumPy", "SciPy", "Scikit-learn", "TensorFlow", "Keras", "PyTorch", "XGBoost", "LightGBM", "Hugging Face", "OpenCV", "Statsmodels"
+  ],
+  "visualization": [
+    "Matplotlib", "Seaborn", "Plotly", "Bokeh", "ggplot2", "Tableau", "Power BI", "Looker", "D3.js"
+  ],
+  "testing": [
+    "JUnit", "Selenium", "PyTest", "Mocha", "Chai", "Jest", "Enzyme", "Postman", "Cypress", "TestNG"
+  ],
+  "project_management": [
+    "JIRA", "Trello", "Asana", "ClickUp", "Confluence", "Notion", "Slack", "Basecamp"
+  ],
+  "platforms_os": [
+    "Linux", "Ubuntu", "Debian", "Fedora", "Windows", "macOS", "Android", "iOS"
+  ],
+  "networking_security": [
+    "Nmap", "Wireshark", "Metasploit", "Burp Suite", "OWASP", "Splunk", "Snort", "Kali Linux", "Firewall", "VPN", "TLS", "SSH"
+  ],
+  "big_data": [
+    "Hadoop", "Spark", "Kafka", "Hive", "Pig", "Presto", "Flink", "Airflow", "NiFi"
+  ],
+  "container_orchestration": [
+    "Docker Swarm", "Kubernetes", "OpenShift", "Rancher", "Nomad"
+  ],
+  "monitoring_logging": [
+    "Prometheus", "Grafana", "ELK Stack", "Datadog", "New Relic", "Splunk", "Sentry"
+  ],
+  "software_dev_methods": [
+    "Agile", "Scrum", "Kanban", "TDD", "CI/CD", "BEM", "MVP", "OOP", "Design Patterns"
+  ],
+  "other_tools": [
+    "Figma", "Adobe XD", "Canva", "Postman", "Swagger", "Make", "Zapier", "MS Excel", "Google Sheets"
+  ]
+}
