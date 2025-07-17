@@ -70,7 +70,7 @@ def extract_text(file_path: str, doc_type: str):
         logging.info(f"Text extraction successful for {file_path}. Word count: {word_count}")
         return {
             "doc_id": doc_id,
-            "type": doc_type,
+            "doc_type": doc_type,
             "text": text,
             "word_count": word_count
         }
