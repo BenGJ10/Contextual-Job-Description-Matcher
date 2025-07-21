@@ -95,7 +95,7 @@ def extract_skills(doc_data: Dict[str, Union[int, str]]) -> Optional[Dict[str, a
             r"\beducation\b",
             r"\bcertifications\b",
             r"\bprojects\b",
-            r"\bpublications\b", 
+            r"\bpublications\b",
         ]
         for pattern in section_patterns:
             if re.search(pattern, text, re.IGNORECASE):
