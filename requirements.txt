@@ -4,11 +4,11 @@ scikit-learn
 fastapi
 uvicorn
 langchain
-langchain-openai
+langchain-community
 chromadb
-openai
 pypdf2
 spacy
+textacy
 python-docx
 python-dotenv
 boto3
