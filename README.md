@@ -16,8 +16,7 @@ This project leverages Google Gemini for skill extraction and semantic similarit
 ---
 
 ## Architecture Overview
-
-```mermaid
+```
               Resume (.pdf /.docx)        Job Description (.pdf /.docx)
                       |                              |
                       v                              v
