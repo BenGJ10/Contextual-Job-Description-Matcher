@@ -2,23 +2,6 @@
 The `Contextual Job Description Matcher` robust, modular backend system for automated matching of resumes to job descriptions using advanced skill extraction, semantic embeddings, and Retrieval-Augmented Generation (RAG) techniques.  
 This project leverages Google Gemini for skill extraction and semantic similarity, and ChromaDB for efficient vector search.
 
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Architecture Overview](#architecture-overview)
-- [How It Works](#how-it-works)
-- [Setup & Installation](#setup--installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Testing](#testing)
-- [Logging](#logging)
-- [Extending the Project](#extending-the-project)
-- [License](#license)
-
----
 
 ## Features
 
@@ -139,7 +122,7 @@ This project leverages Google Gemini for skill extraction and semantic similarit
    ```
 
 4. **Set up environment variables:**
-   - Create a `.env` file in the root directory with your Google Gemini API key:
+   Create a `.env` file in the root directory with your Google Gemini API key:
      ```
      GOOGLE_API_KEY=your_gemini_api_key
      ```
@@ -221,15 +204,6 @@ Job Description Matcher/
 
 - All logs are saved in the `logs/` directory with detailed timestamps and context.
 - Errors, warnings, and info messages are logged for traceability.
-
----
-
-## Extending the Project
-
-- **Add new skill categories:** Update `config/skills.json`.
-- **Support new document types:** Extend `DocumentProcessor`.
-- **Change embedding model:** Update `GeminiEmbeddingFunction` in `rag_pipeline.py`.
-- **Add new scoring methods:** Extend `DatasetIntegrator` with new metrics.
 
 ---
 
