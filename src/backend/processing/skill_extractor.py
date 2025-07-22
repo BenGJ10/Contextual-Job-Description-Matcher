@@ -4,113 +4,82 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 
 import re
 import json
-import spacy
-import textacy
-from typing import Dict, List, Optional, Union
+import google.generativeai as genai
+from typing import List, Dict, Optional
 from src.backend.utils.logger import logging
+import dotenv
 
-# Loading a pretrained English language model
-nlp = spacy.load("en_core_web_sm") 
+# Load environment variables
+dotenv.load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if GOOGLE_API_KEY:
+    genai.configure(api_key = GOOGLE_API_KEY)
+else:
+    raise ValueError("GOOGLE_API_KEY not found in .env")
 
-def load_skills_dict() -> Dict[str, List[str]]:
-    """
-    Loads technical skills from config/skills.json.
-    """
-    skills_file = "config/skills.json"
-    if not os.path.exists(skills_file):
-        logging.error(f"Skills file not found: {skills_file}")
-        return {}
-    try:
-        with open(skills_file, "r") as file:
-            skills_dict = json.load(file)
-            logging.info("Loaded skills dictionary")
-        return skills_dict
-    except Exception as e:
-        logging.error(f"Error loading skills.json: {str(e)}")
-        return {}
-    
-def extract_skills(doc_data: Dict[str, Union[int, str]]) -> Optional[Dict[str, any]]:
-    """
-    Extract technical skills from document text and detect sections.
-    """
-    try:
-        doc_id = doc_data["doc_id"]
-        doc_type = doc_data["doc_type"]
-        text = doc_data["text"]
-        logging.info(f"Extracting skills from {doc_type} (ID: {doc_id})")
+# Load skills configuration
+with open("config/skills.json", "r") as f:
+    SKILLS_CONFIG = json.load(f)
 
-        # Loading skill dict
-        skills_dict = load_skills_dict()
-        if not skills_dict:   
-            return None
-        # Processing text with SpaCy
-        doc = nlp(text)
+class SkillExtractor:
+    def __init__(self):
+        self.skills_config = SKILLS_CONFIG
 
-        # Extracting key terms with textacy and converts raw text into a SpaCy document
-        doc_textacy = textacy.make_spacy_doc(text, lang = "en_core_web_sm")
-        # Textrank lemmatizes words and ranks important key phrases then return top20 key terms
-        terms = textacy.extract.keyterms.textrank(doc_textacy, normalize = "lemma", topn = 20)
-
-        # Initialize skills list
-        extracted_skills = []
-
-        # Matching terms against skills dict
-        for term, _ in terms:
-            for category, skills in skills_dict.items():
-                for skill in skills:
-                    if skill.lower() in term.lower():
-                        extracted_skills.append({
-                            "name": skill,
-                            "category": category,
-                            "match": None  # Placeholder for Multi-Job Matching
-                        })
-
-        # Additional NER-based extraction
-        for ent in doc.ents: # doc_ents contains all named entities SpaCy has recognized      
-            if ent.label_ in ["ORG", "PRODUCT"] and any(
-                ent.text.lower() in skill.lower() for skill in sum(skills_dict.values(), [])
-            ):
-                for category, skills in skills_dict.items():
-                    for skill in skills:
-                        if skill.lower() in ent.text.lower():
-                            extracted_skills.append({
-                                "name": skill,
-                                "category": category,
-                                "match": None
-                            })
-
-        # Removing duplicates
-        unique_skills = []
-        seen = set()
-        for skill in extracted_skills:
-            if skill["name"] not in seen:
-                unique_skills.append(skill)
-                seen.add(skill["name"])
-
-        # Detecting sections for Resume Quality Score (clarity) using regex
-        sections = []
-        section_patterns = [
-            r"\bskills\b",          # matches the word "skills" only if it stands alone
-            r"\bexperience\b",
-            r"\beducation\b",
-            r"\bcertifications\b",
-            r"\bprojects\b",
-            r"\bpublications\b",
-        ]
-        for pattern in section_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                sections.append(pattern.replace(r"\b", ""))
+    def extract_skills(self, text: str) -> List[Dict]:
+        """
+        Extract technical and soft skills from text using Gemini.
+        """
         
-        logging.info(f"Extracted {len(unique_skills)} skills and {len(sections)} sections from {doc_type} (ID: {doc_id})")
-
-        return {
-            "doc_id": doc_id,
-            "doc_type": doc_type,
-            "skills": unique_skills,
-            "sections": sections,
-            "keyword_density": len(unique_skills) / doc_data["word_count"] if doc_data["word_count"] > 0 else 0
-        }
-    except Exception as e:
-        logging.error(f"Error extracting skills for {doc_id}: {str(e)}")
-        return None
-    
+        try:
+            prompt = f"""
+            Extract all technical and soft skills from the provided text, mapping synonyms to canonical names in the following skills list:
+            {json.dumps(self.skills_config, indent=2)}
+            Output *only* a valid JSON array of objects with 'name' and 'category' keys.
+            Example: [
+                {{"name": "Python", "category": "programming_languages"}},
+                {{"name": "Critical Thinking", "category": "soft_skills"}}
+            ]
+            Use canonical names for synonyms (e.g., 'Python3' or 'Py' → 'Python').
+            If no skills are found, return an empty array [].
+            Do not include any text outside the JSON array.
+            Text: {text[:2000]}
+            """
+            
+            model = genai.GenerativeModel("gemini-2.5-pro")
+            response = model.generate_content(prompt)
+            logging.debug(f"Raw Gemini response: {response.text}")
+            cleaned_response = response.text.strip("```json\n```").strip()
+            if not cleaned_response:
+                logging.warning("Empty response from Gemini")
+                return []
+            
+            try:
+                skills = json.loads(cleaned_response)
+                if not isinstance(skills, list):
+                    logging.warning(f"Gemini response is not a list: {cleaned_response}")
+                    return []
+                valid_skills = [
+                    skill for skill in skills
+                    if isinstance(skill, dict) and "name" in skill and "category" in skill
+                    and skill["name"] in sum(self.skills_config.values(), [])
+                ]
+                logging.debug(f"Extracted skills: {valid_skills}")
+                return valid_skills
+            
+            except json.JSONDecodeError as e:
+                logging.error(f"Failed to parse Gemini response as JSON: {str(e)}")
+                
+                # Fallback: Extract skills from malformed response
+                skills = []
+                pattern = r'"name":\s*"([^"]+)",\s*"category":\s*"([^"]+)"'
+                matches = re.findall(pattern, cleaned_response)
+                
+                for name, category in matches:
+                    if name in sum(self.skills_config.values(), []):
+                        skills.append({"name": name, "category": category})
+                logging.debug(f"Fallback extracted skills: {skills}")
+                return skills
+            
+        except Exception as e:
+            logging.error(f"Error extracting skills: {str(e)}")
+            return []
