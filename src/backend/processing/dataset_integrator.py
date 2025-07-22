@@ -3,136 +3,118 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 import json
+import glob
 from typing import Dict, List, Optional
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from src.backend.utils.logger import logging
-from src.backend.processing.document_processor import extract_text
-from src.backend.processing.skill_extractor import extract_skills
+from src.backend.processing.document_processor import DocumentProcessor
+from src.backend.processing.skill_extractor import SkillExtractor
 from src.backend.utils.data_formatter import format_data
+import google.generativeai as genai
+import dotenv
 
+# Load environment variables
+dotenv.load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+else:
+    raise ValueError("GOOGLE_API_KEY not found in .env")
 
-def compute_ats_score(skill_data: Dict[str, any], word_count: int) -> float:
-    """
-    Compute ATS compatibility score based on keyword density, clarity, and formatting.
-    Returns:
-        float: ATS score (0-100).
-    """
-    try:
-        keyword_density = skill_data.get("keyword_density", 0)
-        sections = skill_data.get("sections", [])
-        expected_sections = ["skills", "experience", "education", "certifications", "publications", "projects"]
-        section_score = len([s for s in sections if s.lower() in expected_sections]) / len(expected_sections)
-        formatting_score = 1.0 if 200 <= word_count <= 1000 else 0.5  # Penalize if outside optimal range
-        ats_score = (keyword_density * 0.5 + section_score * 0.3 + formatting_score * 0.2) * 100
-        ats_score = round(ats_score, 2)  # Optional rounding
+class DatasetIntegrator:
+    def __init__(self):
+        self.doc_processor = DocumentProcessor()
+        self.skill_extractor = SkillExtractor()
+        with open("config/skills.json", "r") as f:
+            self.skills_config = json.load(f)
 
-        logging.debug(f"ATS score components: density={keyword_density}, sections={section_score}, formatting={formatting_score}")
-        return ats_score
-    except Exception as e:
-        logging.error(f"Error computing ATS score: {str(e)}")
-        return 0.0
-    
-def match_resume_to_jobs(resume_skills: List[Dict], job_skills: List[Dict[str, List[Dict]]]) -> List[Dict]:
-    """
-    Match resume skills to multiple job descriptions using cosine similarity.
-    """
-    try:
-        # Extract skill names from resume and job descriptions
-        resume_skill_names = []
-        for skill in resume_skills:
-            resume_skill_names.append(skill["name"])
-         
-        job_skill_texts = []
-        job_ids = []
-        for job in job_skills:
-            job_skill_names = []
-            for skill in job["skills"]:
-                job_skill_names.append(skill["name"])
-            job_skill_texts.append(" ".join(job_skill_names)) # For each job, join skill names into one string
-            job_ids.append(job["doc_id"])
+    def compute_relevance_score(self, resume_skills: List[Dict], jd_skills: List[Dict], resume_text: str, jd_text: str) -> float:
+        """Compute relevance score based on skill overlap and Gemini text similarity."""
+        try:
+            resume_skill_names = set(skill["name"] for skill in resume_skills)
+            jd_skill_names = set(skill["name"] for skill in jd_skills)
+            overlap = len(resume_skill_names & jd_skill_names) / len(jd_skill_names) if jd_skill_names else 0
+            overlap_score = overlap * 50
+
+            prompt = f"""
+            Compare the following resume and job description for semantic similarity.
+            Return a score (0-100) based on how well the resume matches the job requirements.
+            Resume: {resume_text}
+            Job Description: {jd_text}
+            """
+            model = genai.GenerativeModel("gemini-2.5-pro")
+            response = model.generate_content(prompt)
+            similarity_score = float(response.text.strip()) if response.text.isdigit() else 0
+            return (overlap_score + similarity_score) / 2
         
-        # Vectorize Skills
-        vectorizer = CountVectorizer() 
-        skill_vectors = vectorizer.fit_transform([ " ".join(resume_skill_names)] + job_skill_texts) # First vector is the resume skills
-        resume_vector = skill_vectors[0]
-        job_vectors = skill_vectors[1:]
+        except Exception as e:
+            logging.error(f"Error computing relevance score: {str(e)}")
+            return 0.0
+
+    def compute_completeness_score(self, resume_skills: List[Dict]) -> float:
+        """Compute completeness score based on coverage of skills.json domains."""
+        try:
+            resume_skill_names = set(skill["name"] for skill in resume_skills)
+            all_skills = set()
+            for category, skills in self.skills_config.items():
+                if category == "soft_skills":
+                    continue
+                all_skills.update(skills)
+            coverage = len(resume_skill_names & all_skills) / len(all_skills) if all_skills else 0
+            return coverage * 100
         
-        # Compute cosine similarity
-        similarities = cosine_similarity(resume_vector, job_vectors)[0]
-        matches = [
-            {"job_id": job_ids[i], "match_score": float(similarities[i] * 100)}
-            for i in range(len(job_ids))
-        ]
-        
-        # Sort by match score (descending)
-        matches = sorted(matches, key = lambda x: x["match_score"], reverse = True)
-        logging.info(f"Computed {len(matches)} job matches for resume")
-        return matches[:3]  # Limit to top 3 matches
-    
-    except Exception as e:
-        logging.error(f"Error matching resume to jobs: {str(e)}")
-        return []
+        except Exception as e:
+            logging.error(f"Error computing completeness score: {str(e)}")
+            return 0.0
 
-def process_dataset(resume_dir: str = "data/resumes", job_dir: str = "data/jobs") -> List[Dict]:
-    """
-    Process resumes and job descriptions, integrating previous steps.
-    """
-    results = []
-    job_data_list = []
+    def process_dataset(self, resume_dir: str = "data/resumes", job_dir: str = "data/jobs") -> List[Dict]:
+        """Process resumes and JDs, extracting skills and computing metrics."""
+        try:
+            results = []
+            resume_files = glob.glob(os.path.join(resume_dir, "*"))
+            job_files = glob.glob(os.path.join(job_dir, "*"))
 
-    try:
-        # Process job descriptions
-        os.makedirs(job_dir, exist_ok=True)
-        for file_name in os.listdir(job_dir):
-            file_path = os.path.join(job_dir, file_name)
-            if not (file_path.endswith(".docx") or file_path.endswith(".pdf")):
-                continue
-            doc_data = extract_text(file_path, "job")
-            if not doc_data:
-                continue
-            skill_data = extract_skills(doc_data)
-            if not skill_data:
-                continue
-            formatted_data = format_data(doc_data, skill_data)
-            if formatted_data:
-                job_data_list.append(formatted_data)
-                logging.info(f"Processed job description: {file_path}")
+            # Process job description
+            job_data_list = []
+            job_data = None
+            if job_files:
+                job_file = job_files[0]
+                doc_data = self.doc_processor.extract_text(job_file, doc_type="job")
+                if not doc_data:
+                    logging.warning(f"No text extracted from {job_file}")
+                else:
+                    skills = self.skill_extractor.extract_skills(doc_data["text"])
+                    job_data = format_data(doc_data, skills)
+                    if not job_data:
+                        logging.warning(f"Failed to format data for {job_file}")
+                    else:
+                        job_data_list.append(job_data)
+                        results.append(job_data)
+            else:
+                logging.warning("No job description files found.")
 
-        # Process resumes
-        os.makedirs(resume_dir, exist_ok=True)
-        for file_name in os.listdir(resume_dir):
-            file_path = os.path.join(resume_dir, file_name)
-            if not (file_path.endswith(".docx") or file_path.endswith(".pdf")):
-                continue
-            doc_data = extract_text(file_path, "resume")
-            if not doc_data:
-                logging.warning(f"Skipping resume due to extraction failure: {file_path}")
-                continue
-            skill_data = extract_skills(doc_data)
-            if not skill_data:
-                logging.warning(f"Skipping resume due to skill extraction failure: {file_path}")
-                continue
-            formatted_data = format_data(doc_data, skill_data)
-            if not formatted_data:
-                logging.warning(f"Skipping resume due to formatting failure: {file_path}")
-                continue
-
-            # Compute ATS score
-            ats_score = compute_ats_score(skill_data, doc_data["word_count"])
-            formatted_data["metrics"]["ats_score"] = ats_score
+            # Process resumes
+            for resume_file in resume_files:
+                doc_data = self.doc_processor.extract_text(resume_file, doc_type="resume")
+                if not doc_data:
+                    logging.warning(f"No text extracted from {resume_file}")
+                    continue
+                skills = self.skill_extractor.extract_skills(doc_data["text"])
+                resume_data = format_data(doc_data, skills)
+                if not resume_data:
+                    logging.warning(f"Failed to format data for {resume_file}")
+                    continue
+                resume_data["metrics"] = {
+                    "relevance_score": self.compute_relevance_score(skills, job_data["skills"], doc_data["text"], job_data["text"]) if job_data else 0.0,
+                    "completeness_score": self.compute_completeness_score(skills)
+                }
+                resume_data["job_matches_rag"] = []
+                results.append(resume_data)
                 
-            # Match to jobs (if jobs exist)
-            if job_data_list:
-                matches = match_resume_to_jobs(formatted_data["skills"], job_data_list)
-                formatted_data["job_matches"] = matches
+
+            logging.info(f"Processed {len(results)} documents")
+            return results
         
-            results.append(formatted_data)
-            logging.info(f"Processed resume: {file_path} with ATS score: {ats_score}")
-    
-        return results
-    
-    except Exception as e:
-        logging.error(f"Error processing dataset: {str(e)}")
-        return []
-        
+        except Exception as e:
+            logging.error(f"Error processing dataset: {str(e)}")
+            return []
