@@ -5,8 +5,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 import json
 from typing import Dict, List, Optional
 import google.generativeai as genai
-from langchain_chroma import Chroma
-from langchain.prompts import PromptTemplate
+from langchain_chroma import Chroma # Vector database (Chroma) used for RAG 
+from langchain.prompts import PromptTemplate # LangChain utility to dynamically construct LLM prompts
 from src.backend.utils.logger import logging
 from src.backend.processing.dataset_integrator import DatasetIntegrator
 import dotenv
@@ -25,16 +25,16 @@ class GeminiEmbeddingFunction:
     """
     Embedding function using Google Gemini for text embeddings.
     """
-    def __call__(self, texts):
+    def __call__(self, texts): # Allows the class instance to be called like a function to generate embeddings
         try:
             # Generate embeddings using Gemini
             result = genai.embed_content(
                 model = "models/embedding-001", 
                 content = texts,
-                task_type = "semantic_similarity" # Assuming semantic similarity task
+                task_type = "semantic_similarity" # Tells Gemini embeddings to focus on semantic meaning
             )
             # Convert result to list if it's not already
-            embeddings = result["embedding"] if isinstance(result["embedding"], list) else [result["embedding"]]
+            embeddings = result["embedding"] if isinstance(result["embedding"], list) else [result["embedding"]] # Ensure embeddings are in list format
             logging.debug(f"Generated embeddings for {len(texts)} texts")
             return embeddings
         
@@ -42,18 +42,21 @@ class GeminiEmbeddingFunction:
             logging.error(f"Error generating embeddings: {str(e)}")
             return [[] for _ in texts]
 
-    def embed_documents(self, texts):
+    def embed_documents(self, texts): # For embedding multiple docs (used by Chroma).
         return self.__call__(texts)
 
     def embed_query(self, text):
         # Chroma expects a list, but for a single query, wrap in a list and return the first embedding
-        return self.__call__([text])[0]
+        return self.__call__([text])[0] 
 
 class RAGPipeline:
-    def __init__(self, collection_name: str = "job_matcher"):
-        """
-        Initialize Chroma with LangChain and Gemini embeddings.
-        """
+    """
+        Initialize Chroma with LangChain and Gemini embeddings. This is the core pipeline combining:
+        - Document embeddings storage in Chroma
+        - Resume-JD matching
+        - Gemini-based suggestions and skill gap analysis
+    """
+    def __init__(self, collection_name: str = "job_matcher"):       
         try:
             self.embedding_function = GeminiEmbeddingFunction()
             self.vector_store = Chroma(
@@ -76,16 +79,22 @@ class RAGPipeline:
             jd_skill_names = set(skill["name"] for skill in jd_skills)
             missing_skills = list(jd_skill_names - resume_skill_names)
             
-            prompt_template = PromptTemplate.from_template("""
-            Compare the following resume and job description for a data science role. Output JSON with:
-            - match_score (0-100): Based on skill overlap and text similarity, prioritizing data science skills (e.g., Python, SQL, TensorFlow).
-            - missing_skills: Skills in JD but not in resume.
-            - suggestions: Tailored advice to improve resume for JD (e.g., add missing skills, highlight relevant projects like LSTM or machine learning work).
+            prompt_template = PromptTemplate.from_template(""" You are an expert resume reviewer and job matcher. Your task is to analyze the provided resume and job description, focusing on skills and experience alignment.
+            Compare the following resume and job description. Output JSON with:
+                - match_score (0-100): Based on skill overlap and text similarity, focusing on the skills most relevant to the job description.
+                - missing_skills: Skills in JD but not in resume.
+                - suggestions: 3-5 specific suggestions to improve the resume as a list of {{"area": str, "advice": str}} objects. 
+            Focus on:
+            - Adding missing or related skills
+            - Highlighting relevant projects and experience aligned with the JD
+            - Incorporating JD keywords naturally
+            - Quantifying achievements where possible
             Resume: {resume_text}
             Job Description: {jd_text}
             Resume Skills: {resume_skills}
             JD Skills: {jd_skills}
             """)
+
             prompt = prompt_template.format(
                 resume_text = resume_text[:1000],
                 jd_text = jd_text[:1000],
@@ -115,9 +124,9 @@ class RAGPipeline:
                 logging.warning(f"No skills for doc_id: {doc_id}")
                 return False
             self.vector_store.add_texts(
-                texts=[skill_text],
-                metadatas=[{"doc_id": doc_id, "doc_type": doc_data["doc_type"], "file_name": doc_data.get("file_name", "")}],
-                ids=[doc_id]
+                texts = [skill_text],
+                metadatas = [{"doc_id": doc_id, "doc_type": doc_data["doc_type"], "file_name": doc_data.get("file_name", "")}],
+                ids = [doc_id]
             )
             logging.info(f"Stored embeddings for doc_id: {doc_id}")
             return True
@@ -137,7 +146,7 @@ class RAGPipeline:
                 logging.warning(f"No skills for resume {resume_id}")
                 return []
             
-            results = self.vector_store.similarity_search_with_score(resume_skill_text, k=5)
+            results = self.vector_store.similarity_search_with_score(resume_skill_text, k = 5) # Queries Chroma to find top 5 semantically similar jobs
             logging.debug(f"Chroma query results for resume {resume_id}: {[(doc.metadata, score) for doc, score in results]}")
             
             matches = []
@@ -152,6 +161,8 @@ class RAGPipeline:
                 )
                 matches.append({
                     "job_id": job_id,
+                    "job_title": job_data.get("job_title", ""),
+                    "company": job_data.get("company", ""),
                     "match_score": float((1 - score) * 100),
                     "missing_skills": suggestions.get("missing_skills", []),
                     "suggestions": suggestions.get("suggestions", "")
@@ -166,7 +177,7 @@ class RAGPipeline:
 
     def process_rag(self, resume_dir: str = "data/resumes", job_dir: str = "data/jobs") -> List[Dict]:
         """
-        Process dataset through RAG pipeline.
+        This is the end-to-end orchestration. Process dataset through RAG pipeline.
         """
         try:
             dataset_integrator = DatasetIntegrator()
@@ -180,8 +191,8 @@ class RAGPipeline:
             job_data_list = [r for r in dataset_results if r["doc_type"] == "job"]
             resume_data_list = [r for r in dataset_results if r["doc_type"] == "resume"]
 
-            self.vector_store.delete_collection()
-            self.vector_store = Chroma(
+            self.vector_store.delete_collection() # Reset the collection to ensure fresh embeddings
+            self.vector_store = Chroma( # Reinitialize Chroma 
                 collection_name = "job_matcher",
                 embedding_function = self.embedding_function,
                 persist_directory="./chroma_db"
@@ -210,7 +221,7 @@ class RAGPipeline:
                         resume_data["metrics"] = {"relevance_score": 0.0, "completeness_score": 0.0}
                 
                 with open(f"data/processed/{resume_data['doc_id']}.json", "w") as f:
-                    json.dump(resume_data, f, indent=2)
+                    json.dump(resume_data, f, indent = 2)
                 logging.info(f"Processed RAG for resume {resume_data['doc_id']} with {len(matches)} matches")
 
             logging.info("RAG pipeline processing completed successfully")
