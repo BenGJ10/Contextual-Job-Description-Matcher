@@ -46,6 +46,11 @@ def format_data(doc_data: Dict[str, any], skills: List[Dict]) -> Optional[Dict[s
             "file_size_mb": file_size_mb
         }
 
+        if doc_type == "job":
+            formatted_data["job_title"] = doc_data.get("job_title", "")
+            formatted_data["company"] = doc_data.get("company", "")
+
+
         # Save to local file
         os.makedirs("data/processed", exist_ok=True)
         local_path = f"data/processed/{doc_id}.json"
