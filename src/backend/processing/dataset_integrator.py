@@ -65,10 +65,11 @@ class DatasetIntegrator:
 
             prompt = f"""
             Compare the following resume and job description for semantic similarity.
-            Return a score (0-100) based on how well the resume matches the job requirements.
+            Return ONLY a single integer score between 0 and 100, with no explanation or extra text.
             Resume: {resume_text}
             Job Description: {jd_text}
             """
+            
             model = genai.GenerativeModel("gemini-2.5-pro")
             response = model.generate_content(prompt)
             try:
