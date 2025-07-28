@@ -28,13 +28,40 @@ class DatasetIntegrator:
         with open("config/skills.json", "r") as f:
             self.skills_config = json.load(f)
 
+    def extract_critical_skills(self, jd_text: str) -> List[str]:
+        """Extract top 5 critical skills dynamically using Gemini."""
+        try:
+            prompt = f"""
+            Extract minimum 5, maximum 8 critical (must-have) hard skills from the following job description.
+            Only return skills relevant to the job, in JSON array format (e.g., ["Java", "AWS", "Docker"]).
+            Job Description:
+            {jd_text}
+            """
+            model = genai.GenerativeModel("gemini-2.5-pro")
+            response = model.generate_content(prompt)
+            skills = json.loads(response.text.strip())
+            if isinstance(skills, list) and all(isinstance(s, str) for s in skills):
+                logging.debug(f"Dynamically extracted critical skills: {skills}")
+                return skills
+            else:
+                logging.warning(f"Invalid critical skills format: {skills}")
+                return []
+        except Exception as e:
+            logging.warning(f"Failed to extract critical skills via Gemini: {e}")
+            return []
+        
     def compute_relevance_score(self, resume_skills: List[Dict], jd_skills: List[Dict], resume_text: str, jd_text: str) -> float:
         """Compute relevance score based on skill overlap and Gemini text similarity."""
         try:
             resume_skill_names = set(skill["name"] for skill in resume_skills)
             jd_skill_names = set(skill["name"] for skill in jd_skills)
-            overlap = len(resume_skill_names & jd_skill_names) / len(jd_skill_names) if jd_skill_names else 0
-            overlap_score = overlap * 50
+            critical_skills = self.extract_critical_skills(jd_text)
+            if not critical_skills:
+                critical_skills = self.skills_config.get("critical_skills", [])
+            
+            critical_overlap = len(resume_skill_names & set(critical_skills) & jd_skill_names)
+            total_overlap = len(resume_skill_names & jd_skill_names)
+            overlap_score = (total_overlap + 2 * critical_overlap) / (len(jd_skill_names) + 2 * len(critical_skills)) * 50 if jd_skill_names else 0
 
             prompt = f"""
             Compare the following resume and job description for semantic similarity.
@@ -44,8 +71,18 @@ class DatasetIntegrator:
             """
             model = genai.GenerativeModel("gemini-2.5-pro")
             response = model.generate_content(prompt)
-            similarity_score = float(response.text.strip()) if response.text.isdigit() else 0
-            return (overlap_score + similarity_score) / 2
+            try:
+                similarity_score = float(response.text.strip())
+                if not 0 <= similarity_score <= 100:
+                    logging.warning(f"Invalid similarity score: {similarity_score}, defaulting to 0")
+                    similarity_score = 0
+            except ValueError:
+                logging.warning(f"Non-numeric similarity score: {response.text}, defaulting to 0")
+                similarity_score = 0
+            
+            final_score = (overlap_score + similarity_score) / 2
+            logging.debug(f"Relevance score: overlap={overlap_score}, similarity={similarity_score}, final={final_score}")
+            return final_score
         
         except Exception as e:
             logging.error(f"Error computing relevance score: {str(e)}")
