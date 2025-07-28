@@ -71,31 +71,30 @@ class DatasetIntegrator:
         """Process resumes and JDs, extracting skills and computing metrics."""
         try:
             results = []
-            resume_files = glob.glob(os.path.join(resume_dir, "*"))
-            job_files = glob.glob(os.path.join(job_dir, "*"))
+            resume_files = glob.glob(os.path.join(resume_dir, "*")) # Assuming resumes are in a flat structure
+            job_files = glob.glob(os.path.join(job_dir, "*")) # Assuming jobs are in a flat structure
 
-            # Process job description
+            # Process job descriptions
             job_data_list = []
-            job_data = None
-            if job_files:
-                job_file = job_files[0]
-                doc_data = self.doc_processor.extract_text(job_file, doc_type="job")
+            for job_file in job_files:
+                doc_data = self.doc_processor.extract_text(job_file, doc_type = "job")
                 if not doc_data:
                     logging.warning(f"No text extracted from {job_file}")
-                else:
-                    skills = self.skill_extractor.extract_skills(doc_data["text"])
-                    job_data = format_data(doc_data, skills)
-                    if not job_data:
-                        logging.warning(f"Failed to format data for {job_file}")
-                    else:
-                        job_data_list.append(job_data)
-                        results.append(job_data)
-            else:
-                logging.warning("No job description files found.")
+                    continue
 
-            # Process resumes
+                skills = self.skill_extractor.extract_skills(doc_data["text"])
+                job_data = format_data(doc_data, skills)
+                
+                if not job_data:
+                    logging.warning(f"Failed to format data for {job_file}")
+                    continue
+                job_data_list.append(job_data)
+                results.append(job_data)
+
+            
+           # Process resumes
             for resume_file in resume_files:
-                doc_data = self.doc_processor.extract_text(resume_file, doc_type="resume")
+                doc_data = self.doc_processor.extract_text(resume_file, doc_type = "resume")
                 if not doc_data:
                     logging.warning(f"No text extracted from {resume_file}")
                     continue
@@ -104,13 +103,24 @@ class DatasetIntegrator:
                 if not resume_data:
                     logging.warning(f"Failed to format data for {resume_file}")
                     continue
+                
+                # Compute relevance score against the most relevant JD
+                max_relevance_score = 0.0
+                if job_data_list:
+                    resume_skill_names = set(skill["name"] for skill in skills)
+                    for job_data in job_data_list:
+                        jd_skill_names = set(skill["name"] for skill in job_data["skills"])
+                        overlap = len(resume_skill_names & jd_skill_names) / len(jd_skill_names) if jd_skill_names else 0
+                        score = self.compute_relevance_score(skills, job_data["skills"], doc_data["text"], job_data["text"])
+                        max_relevance_score = max(max_relevance_score, score * 0.5 + overlap * 50)
+                
                 resume_data["metrics"] = {
-                    "relevance_score": self.compute_relevance_score(skills, job_data["skills"], doc_data["text"], job_data["text"]) if job_data else 0.0,
+                    "relevance_score": max_relevance_score,
                     "completeness_score": self.compute_completeness_score(skills)
                 }
+                
                 resume_data["job_matches_rag"] = []
                 results.append(resume_data)
-                
 
             logging.info(f"Processed {len(results)} documents")
             return results
